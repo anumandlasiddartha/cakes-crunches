@@ -1,0 +1,488 @@
+// ═══════════════════════════════════════════════════════════════
+// Cakes & Crunches — Prisma Database Schema (SQLite Compatible)
+// ═══════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Roles & Users ────────────────────────────────────────────
+
+model Role {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  permissions String?   // Store permissions as comma-separated or JSON string for SQLite
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  users User[]
+
+  @@index([name])
+  @@map("roles")
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  phone         String?
+  avatar        String?
+  roleId        Int
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  refreshToken  String?
+  resetToken    String?
+  resetTokenExp DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  role          Role           @relation(fields: [roleId], references: [id])
+  notifications Notification[]
+  activityLogs  ActivityLog[]
+  auditLogs     AuditLog[]
+
+  @@index([email])
+  @@index([roleId])
+  @@map("users")
+}
+
+// ── Customers ────────────────────────────────────────────────
+
+model Customer {
+  id           Int       @id @default(autoincrement())
+  name         String
+  email        String?
+  phone        String
+  altPhone     String?
+  address      String?
+  city         String?
+  pincode      String?
+  gstNumber    String?
+  notes        String?
+  totalOrders  Int       @default(0)
+  totalSpent   Decimal   @default(0)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  bulkOrders   BulkOrder[]
+  wallet       Wallet?
+
+  @@index([name])
+  @@index([phone])
+  @@index([email])
+  @@map("customers")
+}
+
+// ── Bulk Orders (Parent Order Group) ─────────────────────────
+
+model BulkOrder {
+  id              Int       @id @default(autoincrement())
+  orderNumber     String    @unique
+  customerId      Int
+  orderDate       DateTime  @default(now())
+  eventDate       DateTime?
+  eventType       String?
+  eventVenue      String?
+  deliveryAddress String?
+  totalAmount     Decimal
+  advanceAmount   Decimal   @default(0)
+  balanceAmount   Decimal   @default(0)
+  paidAmount      Decimal   @default(0)
+  discountAmount  Decimal   @default(0)
+  taxAmount       Decimal   @default(0)
+  grandTotal      Decimal
+  status          String    @default("pending")
+  priority        String    @default("normal")
+  paymentStatus   String    @default("unpaid")
+  paymentDueDate  DateTime?
+  notes           String?
+  internalNotes   String?
+  createdBy       Int?
+  updatedBy       Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  orderItems       OrderItem[]
+  advancePayments  AdvancePayment[]
+  balancePayments  BalancePayment[]
+  invoices         Invoice[]
+  reminders        Reminder[]
+  attachments      Attachment[]
+  orderHistory     OrderHistory[]
+
+  @@index([customerId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([eventDate])
+  @@index([orderDate])
+  @@map("bulk_orders")
+}
+
+// ── Order Items (Individual items inside a bulk order) ────────
+
+model OrderItem {
+  id          Int       @id @default(autoincrement())
+  bulkOrderId Int
+  itemName    String
+  description String?
+  category    String?
+  quantity    Int       @default(1)
+  unitPrice   Decimal
+  totalPrice  Decimal
+  weight      String?
+  flavor      String?
+  customization String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  bulkOrder   BulkOrder @relation(fields: [bulkOrderId], references: [id], onDelete: Cascade)
+
+  @@index([bulkOrderId])
+  @@map("order_items")
+}
+
+// ── Advance Payments ─────────────────────────────────────────
+
+model AdvancePayment {
+  id              Int       @id @default(autoincrement())
+  bulkOrderId     Int
+  amount          Decimal
+  paymentMethodId Int?
+  paymentMethod   String
+  referenceNumber String?
+  receivedDate    DateTime  @default(now())
+  receivedBy      Int?
+  notes           String?
+  receiptUrl      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  bulkOrder       BulkOrder      @relation(fields: [bulkOrderId], references: [id])
+  method          PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  ledgerEntries   LedgerEntry[]
+
+  @@index([bulkOrderId])
+  @@index([receivedDate])
+  @@map("advance_payments")
+}
+
+// ── Balance Payments ─────────────────────────────────────────
+
+model BalancePayment {
+  id              Int       @id @default(autoincrement())
+  bulkOrderId     Int
+  amount          Decimal
+  paymentMethodId Int?
+  paymentMethod   String
+  referenceNumber String?
+  paidDate        DateTime  @default(now())
+  receivedBy      Int?
+  notes           String?
+  receiptUrl      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  bulkOrder       BulkOrder      @relation(fields: [bulkOrderId], references: [id])
+  method          PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  ledgerEntries   LedgerEntry[]
+
+  @@index([bulkOrderId])
+  @@index([paidDate])
+  @@map("balance_payments")
+}
+
+// ── Payment Methods ──────────────────────────────────────────
+
+model PaymentMethod {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  displayName String
+  icon        String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  advancePayments AdvancePayment[]
+  balancePayments BalancePayment[]
+
+  @@map("payment_methods")
+}
+
+// ── Transaction Ledger (Double-Entry Bookkeeping) ────────────
+
+model LedgerEntry {
+  id                Int       @id @default(autoincrement())
+  transactionRef    String    @unique
+  type              String
+  debit             Decimal   @default(0)
+  credit            Decimal   @default(0)
+  runningBalance    Decimal   @default(0)
+  description       String
+  advancePaymentId  Int?
+  balancePaymentId  Int?
+  walletTransId     Int?
+  createdBy         Int?
+  createdAt         DateTime  @default(now())
+
+  advancePayment    AdvancePayment?    @relation(fields: [advancePaymentId], references: [id])
+  balancePayment    BalancePayment?    @relation(fields: [balancePaymentId], references: [id])
+  walletTransaction WalletTransaction? @relation(fields: [walletTransId], references: [id])
+
+  @@index([transactionRef])
+  @@index([type])
+  @@index([createdAt])
+  @@map("ledger_entries")
+}
+
+// ── Wallet ───────────────────────────────────────────────────
+
+model Wallet {
+  id          Int       @id @default(autoincrement())
+  customerId  Int       @unique
+  balance     Decimal   @default(0)
+  totalCredit Decimal   @default(0)
+  totalDebit  Decimal   @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  customer     Customer            @relation(fields: [customerId], references: [id])
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id          Int       @id @default(autoincrement())
+  walletId    Int
+  type        String
+  amount      Decimal
+  balanceAfter Decimal
+  description String
+  reference   String?
+  createdBy   Int?
+  createdAt   DateTime  @default(now())
+
+  wallet       Wallet        @relation(fields: [walletId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@index([walletId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("wallet_transactions")
+}
+
+// ── Invoices ─────────────────────────────────────────────────
+
+model Invoice {
+  id             Int       @id @default(autoincrement())
+  invoiceNumber  String    @unique
+  bulkOrderId    Int
+  subtotal       Decimal
+  taxAmount      Decimal   @default(0)
+  discountAmount Decimal   @default(0)
+  totalAmount    Decimal
+  paidAmount     Decimal   @default(0)
+  dueAmount      Decimal   @default(0)
+  status         String    @default("draft")
+  issuedDate     DateTime  @default(now())
+  dueDate        DateTime?
+  pdfUrl         String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  bulkOrder      BulkOrder @relation(fields: [bulkOrderId], references: [id])
+
+  @@index([invoiceNumber])
+  @@index([bulkOrderId])
+  @@index([status])
+  @@map("invoices")
+}
+
+// ── Alerts ───────────────────────────────────────────────────
+
+model Alert {
+  id          Int       @id @default(autoincrement())
+  type        String
+  severity    String    @default("info")
+  title       String
+  message     String
+  entityType  String?
+  entityId    Int?
+  isRead      Boolean   @default(false)
+  isDismissed Boolean   @default(false)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([type])
+  @@index([severity])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+// ── Notifications ────────────────────────────────────────────
+
+model Notification {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  title     String
+  body      String
+  type      String    @default("info")
+  link      String?
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ── Reminders ────────────────────────────────────────────────
+
+model Reminder {
+  id            Int       @id @default(autoincrement())
+  bulkOrderId   Int
+  reminderDate  DateTime
+  type          String
+  status        String    @default("pending")
+  message       String?
+  emailSent     Boolean   @default(false)
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  bulkOrder     BulkOrder @relation(fields: [bulkOrderId], references: [id])
+
+  @@index([bulkOrderId])
+  @@index([reminderDate])
+  @@index([status])
+  @@map("reminders")
+}
+
+// ── Attachments ──────────────────────────────────────────────
+
+model Attachment {
+  id          Int       @id @default(autoincrement())
+  bulkOrderId Int
+  filename    String
+  originalName String
+  path        String
+  mimeType    String
+  size        Int
+  uploadedBy  Int?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  bulkOrder   BulkOrder @relation(fields: [bulkOrderId], references: [id])
+
+  @@index([bulkOrderId])
+  @@map("attachments")
+}
+
+// ── Order History (Status Change Tracking) ───────────────────
+
+model OrderHistory {
+  id          Int       @id @default(autoincrement())
+  bulkOrderId Int
+  fromStatus  String?
+  toStatus    String
+  changedBy   Int?
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  bulkOrder   BulkOrder @relation(fields: [bulkOrderId], references: [id])
+
+  @@index([bulkOrderId])
+  @@index([createdAt])
+  @@map("order_history")
+}
+
+// ── Audit Logs ───────────────────────────────────────────────
+
+model AuditLog {
+  id          Int       @id @default(autoincrement())
+  userId      Int?
+  tableName   String
+  recordId    Int
+  action      String
+  oldValues   String?   // JSON string in SQLite
+  newValues   String?   // JSON string in SQLite
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  user        User?     @relation(fields: [userId], references: [id])
+
+  @@index([tableName])
+  @@index([recordId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ── Activity Logs ────────────────────────────────────────────
+
+model ActivityLog {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  action      String
+  details     String?
+  entityType  String?
+  entityId    Int?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// ── Settings ─────────────────────────────────────────────────
+
+model Setting {
+  id          Int       @id @default(autoincrement())
+  key         String    @unique
+  value       String
+  type        String    @default("string")
+  category    String    @default("general")
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([key])
+  @@index([category])
+  @@map("settings")
+}
